@@ -7,8 +7,17 @@
   "bin": {
     "lobstermail-mcp": "./dist/index.js"
   },
-  "files": ["dist"],
-  "keywords": ["mcp", "model-context-protocol", "lobstermail", "email", "ai", "agent"],
+  "files": [
+    "dist"
+  ],
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "lobstermail",
+    "email",
+    "ai",
+    "agent"
+  ],
   "license": "MIT",
   "publishConfig": {
     "access": "public"
@@ -21,11 +30,12 @@
     "url": "https://github.com/lobster-kit/mcp-server-lobstermail"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.26.0",
     "@lobsterkit/lobstermail": "^1.5.0",
+    "@modelcontextprotocol/sdk": "^1.26.0",
     "zod": "^3.25.0"
   },
   "devDependencies": {
+    "@types/node": "^25.4.0",
     "tsup": "^8.3.6",
     "typescript": "^5.7.3"
   },
