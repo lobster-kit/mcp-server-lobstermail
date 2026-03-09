@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { getClient, getInbox, cacheInbox } from './state.js';
 
 const server = new McpServer(
-  { name: '@lobsterkit/lobstermail-mcp', version: '1.4.0' },
+  { name: '@lobsterkit/lobstermail-mcp', version: '1.5.0' },
   {
     capabilities: { tools: {} },
     instructions:
@@ -71,7 +71,7 @@ server.registerTool('check_inbox', {
   },
 }, async ({ inbox_id, limit, since }) => {
   const inbox = await getInbox(inbox_id);
-  const emails = await inbox.receive({ limit, since });
+  const { data: emails } = await inbox.receive({ limit, since });
 
   if (emails.length === 0) {
     return { content: [{ type: 'text' as const, text: 'No emails found in this inbox.' }] };
