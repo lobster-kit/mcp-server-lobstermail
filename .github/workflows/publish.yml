@@ -1,0 +1,54 @@
+name: Publish
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
+  publish:
+    runs-on: ubuntu-latest
+    needs: ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          registry-url: https://registry.npmjs.org
+      - run: npm install -g npm@latest
+      - run: npm ci
+      - run: npm run build
+      - name: Publish to npm
+        run: npm publish --access public --provenance
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          gh release create "$GITHUB_REF_NAME" \
+            --title "@lobsterkit/lobstermail-mcp@${VERSION}" \
+            --notes "## Install
+
+          \`\`\`bash
+          npx @lobsterkit/lobstermail-mcp@${VERSION}
+          \`\`\`
+
+          ## MCP Config
+
+          \`\`\`json
+          {
+            \"mcpServers\": {
+              \"lobstermail\": {
+                \"command\": \"npx\",
+                \"args\": [\"-y\", \"@lobsterkit/lobstermail-mcp@${VERSION}\"]
+              }
+            }
+          }
+          \`\`\`"
