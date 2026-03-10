@@ -267,7 +267,7 @@ Sending requires Free Verified tier or above. Two ways to verify:
 | `inbox.getEmail(emailId)` | `Email` | Full email with body |
 | `inbox.send(opts)` | `{id, status}` | Send email (Tier 1+) |
 | `email.safeBodyForLLM()` | `string` | LLM-safe formatted content |
-| `email.isInjectionRisk` | `boolean` | True if spam score >= 0.5 |
+| `email.isInjectionRisk` | `boolean` | True if injection risk score >= 0.5 |
 | `lm.deleteInbox(id)` | `void` | Soft-delete (7-day grace) |
 
 ## MCP Tools Reference
