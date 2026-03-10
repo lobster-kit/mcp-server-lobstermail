@@ -16,7 +16,7 @@ Email for AI agents. Create real `@lobstermail.ai` inboxes, receive email in rea
 ## Install
 
 ```bash
-curl -sL https://lobstermail.ai/install | sh
+curl -sL https://api.lobstermail.ai/install | sh
 ```
 
 Or manually:
