@@ -30,7 +30,7 @@
     "url": "https://github.com/lobster-kit/mcp-server-lobstermail"
   },
   "dependencies": {
-    "@lobsterkit/lobstermail": "^1.5.0",
+    "@lobsterkit/lobstermail": "^1.6.0",
     "@modelcontextprotocol/sdk": "^1.26.0",
     "zod": "^3.25.0"
   },
