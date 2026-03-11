@@ -384,7 +384,7 @@ server.registerTool('extract_email_data', {
       content: [
         {
           type: 'text' as const,
-          text: 'Extraction timed out. The extraction may still be processing — try get_email later to check.',
+          text: 'Extraction timed out. The extraction may still be processing — try extract_email_data again later.',
         },
       ],
     };
