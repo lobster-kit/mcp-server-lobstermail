@@ -78,7 +78,7 @@ server.registerTool('check_inbox', {
   }
 
   const lines = emails.map(
-    (e) =>
+    (e: any) =>
       `- [${e.id}] From: ${e.from} | Subject: ${e.subject} | ${e.createdAt}` +
       (e.isInjectionRisk ? ' ⚠️ INJECTION RISK' : ''),
   );
@@ -189,7 +189,9 @@ server.registerTool('get_email', {
 
 server.registerTool('send_email', {
   title: 'Send Email',
-  description: 'Send an email from an inbox. Requires a verified account (Tier 1+).',
+  description:
+    'Send an email from an inbox. Requires a verified account (Tier 1+). ' +
+    'To reply within a thread, provide in_reply_to with the Message-ID of the email being replied to.',
   inputSchema: {
     inbox_id: z.string().describe('Inbox ID to send from'),
     to: z.array(z.string()).describe('Recipient email addresses'),
@@ -197,14 +199,16 @@ server.registerTool('send_email', {
     body_text: z.string().describe('Plain text email body'),
     body_html: z.string().optional().describe('HTML email body (optional)'),
     cc: z.array(z.string()).optional().describe('CC recipients'),
+    in_reply_to: z.string().optional().describe('Message-ID of the email being replied to (enables threading)'),
   },
-}, async ({ inbox_id, to, subject, body_text, body_html, cc }) => {
+}, async ({ inbox_id, to, subject, body_text, body_html, cc, in_reply_to }) => {
   const inbox = await getInbox(inbox_id);
   const result = await inbox.send({
     to,
     cc,
     subject,
     body: { text: body_text, html: body_html },
+    inReplyTo: in_reply_to,
   });
 
   return {
@@ -269,6 +273,86 @@ server.registerTool('search_emails', {
       {
         type: 'text' as const,
         text: `${results.data.length} email(s) found for "${query}":\n\n${lines.join('\n')}${footer}`,
+      },
+    ],
+  };
+});
+
+// ── list_threads ─────────────────────────────────────────────────────────────
+
+server.registerTool('list_threads', {
+  title: 'List Threads',
+  description:
+    'List conversation threads for an inbox. ' +
+    'Threads group related emails by In-Reply-To/References headers or subject matching. ' +
+    'Returns newest threads first.',
+  inputSchema: {
+    inbox_id: z.string().describe('Inbox ID (e.g. ibx_...)'),
+    limit: z.number().optional().describe('Max threads to return (default: 20, max: 50)'),
+    cursor: z.string().optional().describe('Pagination cursor from previous response'),
+  },
+}, async ({ inbox_id, limit, cursor }) => {
+  const inbox = await getInbox(inbox_id);
+  const result = await inbox.listThreads({ limit, cursor });
+
+  if (result.data.length === 0) {
+    return { content: [{ type: 'text' as const, text: 'No threads found in this inbox.' }] };
+  }
+
+  const lines = result.data.map(
+    (t: any) => `- [${t.id}] ${t.subject} (${t.emailCount} emails, last: ${t.lastEmailAt})`,
+  );
+
+  const footer = result.hasMore
+    ? `\n\nMore threads available. Pass cursor "${result.cursor}" for next page.`
+    : '';
+
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: `${result.data.length} thread(s) found:\n\n${lines.join('\n')}${footer}\n\nUse get_thread with a thread_id to see all emails in a conversation.`,
+      },
+    ],
+  };
+});
+
+// ── get_thread ───────────────────────────────────────────────────────────────
+
+server.registerTool('get_thread', {
+  title: 'Get Thread',
+  description:
+    'Get a conversation thread with all its emails in chronological order. ' +
+    'Shows the full conversation flow including sender, subject, and preview for each email.',
+  inputSchema: {
+    inbox_id: z.string().describe('Inbox ID (e.g. ibx_...)'),
+    thread_id: z.string().describe('Thread ID (e.g. thd_...)'),
+  },
+}, async ({ inbox_id, thread_id }) => {
+  const inbox = await getInbox(inbox_id);
+  const thread = await inbox.getThread(thread_id);
+
+  const emailLines = thread.emails.map(
+    (e: any, i: number) =>
+      `${i + 1}. [${e.id}] From: ${e.from} | Subject: ${e.subject} | ${e.createdAt}` +
+      (e.preview ? `\n   Preview: ${e.preview.slice(0, 100)}...` : ''),
+  );
+
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: [
+          `Thread: ${thread.subject}`,
+          `Thread ID: ${thread.id}`,
+          `Emails: ${thread.emailCount}`,
+          `Last activity: ${thread.lastEmailAt}`,
+          ``,
+          `Conversation:`,
+          ...emailLines,
+          ``,
+          `Use get_email with an email_id and inbox_id to read the full body of any email.`,
+        ].join('\n'),
       },
     ],
   };
