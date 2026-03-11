@@ -233,7 +233,7 @@ server.registerTool('search_emails', {
     since: z.string().optional().describe('Only emails after this ISO 8601 date'),
     until: z.string().optional().describe('Only emails before this ISO 8601 date'),
     has_attachments: z.boolean().optional().describe('Filter by attachment presence'),
-    limit: z.number().optional().describe('Max results (1-50, default 20)'),
+    limit: z.number().int().min(1).max(50).optional().describe('Max results (1-50, default 20)'),
   },
 }, async ({ query, inbox_id, from, direction, since, until, has_attachments, limit }) => {
   const lm = await getClient();
@@ -261,7 +261,7 @@ server.registerTool('search_emails', {
   );
 
   const footer = results.hasMore
-    ? `\n\nMore results available. Use get_email to read full emails.`
+    ? `\n\nMore results available. Use get_email with an email_id and inbox_id to read the full body.`
     : `\n\nUse get_email with an email_id and inbox_id to read the full body.`;
 
   return {
