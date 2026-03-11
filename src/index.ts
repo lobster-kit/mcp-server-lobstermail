@@ -358,6 +358,114 @@ server.registerTool('get_thread', {
   };
 });
 
+// ── extract_email_data ────────────────────────────────────────────────────────
+
+server.registerTool('extract_email_data', {
+  title: 'Extract Email Data',
+  description:
+    'Extract structured data from an email using AI. ' +
+    'Returns contacts, dates, amounts, scheduling data, and action items. ' +
+    'Triggers extraction and waits for completion (up to 60s).',
+  inputSchema: {
+    inbox_id: z.string().describe('Inbox ID (e.g. ibx_...)'),
+    email_id: z.string().describe('Email ID (e.g. eml_...)'),
+    timeout: z
+      .number()
+      .int()
+      .min(1000)
+      .max(120_000)
+      .optional()
+      .describe('Max wait time in milliseconds (1000-120000, default: 60000)'),
+  },
+}, async ({ inbox_id, email_id, timeout }) => {
+  const inbox = await getInbox(inbox_id);
+  const email = await inbox.getEmail(email_id);
+  const effectiveTimeout = Math.min(timeout ?? 60_000, 120_000);
+  const result = await email.waitForExtraction({ timeout: effectiveTimeout });
+
+  if (!result) {
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: 'Extraction timed out. The extraction may still be processing — try extract_email_data again later.',
+        },
+      ],
+    };
+  }
+
+  if (result.status === 'failed') {
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `Extraction failed: ${result.errorMessage ?? 'Unknown error'}`,
+        },
+      ],
+    };
+  }
+
+  const sections: string[] = [
+    `Extraction ID: ${result.id}`,
+    `Status: ${result.status}`,
+    `Model: ${result.modelUsed}`,
+    `Processing time: ${result.processingMs}ms`,
+    '',
+  ];
+
+  if (result.contacts.length > 0) {
+    sections.push('Contacts:');
+    for (const c of result.contacts) {
+      const parts = [c.name, c.email, c.phone, c.role, c.organization].filter(Boolean);
+      sections.push(`- ${parts.join(' | ')}`);
+    }
+    sections.push('');
+  }
+
+  if (result.dates.length > 0) {
+    sections.push('Dates:');
+    for (const d of result.dates) {
+      sections.push(`- ${d.label}: ${d.value}${d.isEstimate ? ' (estimate)' : ''}`);
+    }
+    sections.push('');
+  }
+
+  if (result.amounts.length > 0) {
+    sections.push('Amounts:');
+    for (const a of result.amounts) {
+      sections.push(`- ${a.label}: ${a.value} ${a.currency}`);
+    }
+    sections.push('');
+  }
+
+  if (result.scheduling.length > 0) {
+    sections.push('Scheduling:');
+    for (const s of result.scheduling) {
+      const time = [s.startTime, s.endTime].filter(Boolean).join(' → ');
+      sections.push(`- ${s.eventType}: ${s.summary}${time ? ` (${time})` : ''}${s.location ? ` @ ${s.location}` : ''}`);
+    }
+    sections.push('');
+  }
+
+  if (result.actions.length > 0) {
+    sections.push('Actions:');
+    for (const a of result.actions) {
+      sections.push(`- [${a.type}] ${a.description}${a.url ? ` — ${a.url}` : ''}${a.deadline ? ` (by ${a.deadline})` : ''}`);
+    }
+    sections.push('');
+  }
+
+  if (result.metadata && Object.keys(result.metadata).length > 0) {
+    sections.push('Metadata:');
+    for (const [key, value] of Object.entries(result.metadata)) {
+      sections.push(`- ${key}: ${JSON.stringify(value)}`);
+    }
+    sections.push('');
+  }
+
+  return { content: [{ type: 'text' as const, text: sections.join('\n') }] };
+});
+
 // ── list_inboxes ──────────────────────────────────────────────────────────────
 
 server.registerTool('list_inboxes', {
