@@ -288,7 +288,7 @@ server.registerTool('list_threads', {
     'Returns newest threads first.',
   inputSchema: {
     inbox_id: z.string().describe('Inbox ID (e.g. ibx_...)'),
-    limit: z.number().optional().describe('Max threads to return (default: 20, max: 50)'),
+    limit: z.number().int().min(1).max(50).optional().describe('Max threads to return (default: 20, max: 50)'),
     cursor: z.string().optional().describe('Pagination cursor from previous response'),
   },
 }, async ({ inbox_id, limit, cursor }) => {
