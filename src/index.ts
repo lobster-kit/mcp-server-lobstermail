@@ -217,6 +217,63 @@ server.registerTool('send_email', {
   };
 });
 
+// ── search_emails ────────────────────────────────────────────────────────────
+
+server.registerTool('search_emails', {
+  title: 'Search Emails',
+  description:
+    'Search emails across all inboxes by keyword. ' +
+    'Matches against subject, sender address, and body preview. ' +
+    'Optionally scope to a single inbox or filter by sender, direction, date, or attachments.',
+  inputSchema: {
+    query: z.string().describe('Search query (e.g. "invoice", "verification code")'),
+    inbox_id: z.string().optional().describe('Scope search to a specific inbox ID'),
+    from: z.string().optional().describe('Filter by sender address (partial match)'),
+    direction: z.enum(['inbound', 'outbound']).optional().describe('Filter by email direction'),
+    since: z.string().optional().describe('Only emails after this ISO 8601 date'),
+    until: z.string().optional().describe('Only emails before this ISO 8601 date'),
+    has_attachments: z.boolean().optional().describe('Filter by attachment presence'),
+    limit: z.number().int().min(1).max(50).optional().describe('Max results (1-50, default 20)'),
+  },
+}, async ({ query, inbox_id, from, direction, since, until, has_attachments, limit }) => {
+  const lm = await getClient();
+  const results = await lm.searchEmails({
+    q: query,
+    inboxId: inbox_id,
+    from,
+    direction,
+    since,
+    until,
+    hasAttachments: has_attachments,
+    limit,
+  });
+
+  if (results.data.length === 0) {
+    return {
+      content: [{ type: 'text' as const, text: `No emails found matching "${query}".` }],
+    };
+  }
+
+  const lines = results.data.map(
+    (e) =>
+      `- [${e.id}] Inbox: ${e.inboxId} | From: ${e.from} | Subject: ${e.subject} | ${e.createdAt}` +
+      (e.isInjectionRisk ? ' ⚠️ INJECTION RISK' : ''),
+  );
+
+  const footer = results.hasMore
+    ? `\n\nMore results available. Use get_email with an email_id and inbox_id to read the full body.`
+    : `\n\nUse get_email with an email_id and inbox_id to read the full body.`;
+
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: `${results.data.length} email(s) found for "${query}":\n\n${lines.join('\n')}${footer}`,
+      },
+    ],
+  };
+});
+
 // ── list_inboxes ──────────────────────────────────────────────────────────────
 
 server.registerTool('list_inboxes', {
