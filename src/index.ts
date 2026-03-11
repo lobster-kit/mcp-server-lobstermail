@@ -371,13 +371,17 @@ server.registerTool('extract_email_data', {
     email_id: z.string().describe('Email ID (e.g. eml_...)'),
     timeout: z
       .number()
+      .int()
+      .min(1000)
+      .max(120_000)
       .optional()
-      .describe('Max wait time in milliseconds (default: 60000)'),
+      .describe('Max wait time in milliseconds (1000-120000, default: 60000)'),
   },
 }, async ({ inbox_id, email_id, timeout }) => {
   const inbox = await getInbox(inbox_id);
   const email = await inbox.getEmail(email_id);
-  const result = await email.waitForExtraction({ timeout: timeout ?? 60_000 });
+  const effectiveTimeout = Math.min(timeout ?? 60_000, 120_000);
+  const result = await email.waitForExtraction({ timeout: effectiveTimeout });
 
   if (!result) {
     return {
@@ -410,7 +414,7 @@ server.registerTool('extract_email_data', {
   ];
 
   if (result.contacts.length > 0) {
-    sections.push('**Contacts:**');
+    sections.push('Contacts:');
     for (const c of result.contacts) {
       const parts = [c.name, c.email, c.phone, c.role, c.organization].filter(Boolean);
       sections.push(`- ${parts.join(' | ')}`);
@@ -419,7 +423,7 @@ server.registerTool('extract_email_data', {
   }
 
   if (result.dates.length > 0) {
-    sections.push('**Dates:**');
+    sections.push('Dates:');
     for (const d of result.dates) {
       sections.push(`- ${d.label}: ${d.value}${d.isEstimate ? ' (estimate)' : ''}`);
     }
@@ -427,7 +431,7 @@ server.registerTool('extract_email_data', {
   }
 
   if (result.amounts.length > 0) {
-    sections.push('**Amounts:**');
+    sections.push('Amounts:');
     for (const a of result.amounts) {
       sections.push(`- ${a.label}: ${a.value} ${a.currency}`);
     }
@@ -435,7 +439,7 @@ server.registerTool('extract_email_data', {
   }
 
   if (result.scheduling.length > 0) {
-    sections.push('**Scheduling:**');
+    sections.push('Scheduling:');
     for (const s of result.scheduling) {
       const time = [s.startTime, s.endTime].filter(Boolean).join(' → ');
       sections.push(`- ${s.eventType}: ${s.summary}${time ? ` (${time})` : ''}${s.location ? ` @ ${s.location}` : ''}`);
@@ -444,7 +448,7 @@ server.registerTool('extract_email_data', {
   }
 
   if (result.actions.length > 0) {
-    sections.push('**Actions:**');
+    sections.push('Actions:');
     for (const a of result.actions) {
       sections.push(`- [${a.type}] ${a.description}${a.url ? ` — ${a.url}` : ''}${a.deadline ? ` (by ${a.deadline})` : ''}`);
     }
@@ -452,7 +456,7 @@ server.registerTool('extract_email_data', {
   }
 
   if (result.metadata && Object.keys(result.metadata).length > 0) {
-    sections.push('**Metadata:**');
+    sections.push('Metadata:');
     for (const [key, value] of Object.entries(result.metadata)) {
       sections.push(`- ${key}: ${JSON.stringify(value)}`);
     }
