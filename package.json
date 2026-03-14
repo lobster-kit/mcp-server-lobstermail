@@ -1,6 +1,6 @@
 {
   "name": "@lobsterkit/lobstermail-mcp",
-  "version": "1.5.0",
+  "version": "1.5.1",
   "description": "MCP server for LobsterMail — gives AI agents email tools with zero code.",
   "type": "module",
   "main": "./dist/index.js",

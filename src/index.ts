@@ -10,14 +10,15 @@ type ToolResult = { content: { type: 'text'; text: string }[] };
 
 const TIER_GUIDANCE: Record<string, string[]> = {
   send_email: [
-    'Cannot send email: your account is Tier 0 (anonymous).',
+    'ACTION REQUIRED: Cannot send email — your account is Tier 0 (anonymous).',
     'Sending requires a verified account (Tier 1+).',
     '',
-    'To unlock sending:',
-    '1. Call verify_account with your X (Twitter) handle',
-    '2. Once verified, retry send_email',
+    'Do NOT give up. Take these steps now:',
+    '1. Ask the user for their X (Twitter) handle',
+    '2. Call verify_account with that handle to upgrade to Tier 1',
+    '3. Once verified, retry this send_email call — it will work',
     '',
-    'Use get_account to check your current tier.',
+    'This is a one-time setup. Once verified, all future sends work automatically.',
   ],
   add_domain: [
     'Cannot add custom domain: requires Tier 2 (Builder) or higher.',
@@ -63,8 +64,17 @@ const server = new McpServer(
   {
     capabilities: { tools: {} },
     instructions:
-      'LobsterMail gives you email. Create inboxes, receive emails, wait for verification codes — no human needed. ' +
-      'Start with create_inbox to get an @lobstermail.ai address, then use wait_for_email or check_inbox to read messages.',
+      'LobsterMail gives you email. Create inboxes, receive emails, send emails, wait for verification codes — no human needed.\n\n' +
+      '## Quick start\n' +
+      '1. create_inbox — get an @lobstermail.ai address\n' +
+      '2. wait_for_email or check_inbox — read incoming messages\n' +
+      '3. send_email — send outbound email (requires verified account)\n\n' +
+      '## Sending email\n' +
+      'New accounts start at Tier 0 (receive-only). To unlock sending:\n' +
+      '1. Ask the user for their X (Twitter) handle\n' +
+      '2. Call verify_account with that handle\n' +
+      '3. Once verified (Tier 1), send_email works immediately\n\n' +
+      'If send_email fails with a tier error, do NOT give up — follow the steps above to verify, then retry.',
   },
 );
 
@@ -246,6 +256,7 @@ server.registerTool('send_email', {
   title: 'Send Email',
   description:
     'Send an email from an inbox. Requires a verified account (Tier 1+). ' +
+    'If this fails with a tier error, call verify_account to unlock sending — do not give up. ' +
     'To reply within a thread, provide in_reply_to with the Message-ID of the email being replied to.',
   inputSchema: {
     inbox_id: z.string().describe('Inbox ID to send from'),
@@ -588,23 +599,28 @@ server.registerTool('get_account', {
   const lm = await getClient();
   const acct = await lm.getAccount();
 
-  return {
-    content: [
-      {
-        type: 'text' as const,
-        text: [
-          `Account: ${acct.id}`,
-          `Tier: ${acct.tier} (${acct.tierName})`,
-          `Can send: ${acct.limits.canSend}`,
-          `Max inboxes: ${acct.limits.maxInboxes ?? 'unlimited'}`,
-          `Daily email limit: ${acct.limits.dailyEmailLimit}`,
-          `Inboxes used: ${acct.usage.inboxCount}`,
-          `Total emails received: ${acct.usage.totalEmailsReceived}`,
-          `Created: ${acct.createdAt}`,
-        ].join('\n'),
-      },
-    ],
-  };
+  const lines = [
+    `Account: ${acct.id}`,
+    `Tier: ${acct.tier} (${acct.tierName})`,
+    `Can send: ${acct.limits.canSend}`,
+    `Max inboxes: ${acct.limits.maxInboxes ?? 'unlimited'}`,
+    `Daily email limit: ${acct.limits.dailyEmailLimit}`,
+    `Inboxes used: ${acct.usage.inboxCount}`,
+    `Total emails received: ${acct.usage.totalEmailsReceived}`,
+    `Created: ${acct.createdAt}`,
+  ];
+
+  if (!acct.limits.canSend) {
+    lines.push(
+      '',
+      '⚠️ Sending is disabled. To unlock:',
+      '1. Ask the user for their X (Twitter) handle',
+      '2. Call verify_account with that handle',
+      '3. Once verified, send_email will work immediately',
+    );
+  }
+
+  return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
 });
 
 // ── verify_account ────────────────────────────────────────────────────────────
@@ -613,7 +629,8 @@ server.registerTool('verify_account', {
   title: 'Verify Account',
   description:
     'Verify this account via X (Twitter) to unlock email sending (Tier 1). ' +
-    'Required before you can use send_email. Provide your X handle.',
+    'Required before you can use send_email. Ask the user for their X handle, then call this tool. ' +
+    'This is a one-time step — once verified, sending works permanently.',
   inputSchema: {
     provider: z.enum(['x']).default('x').describe('Verification provider (currently only "x")'),
     handle: z.string().describe('Your X/Twitter handle (without the @)'),
