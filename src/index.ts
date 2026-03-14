@@ -1,7 +1,62 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
+import { InsufficientTierError, RateLimitError } from '@lobsterkit/lobstermail';
 import { getClient, getInbox, cacheInbox } from './state.js';
+
+// ── Proactive error guidance ─────────────────────────────────────────────────
+
+type ToolResult = { content: { type: 'text'; text: string }[] };
+
+const TIER_GUIDANCE: Record<string, string[]> = {
+  send_email: [
+    'Cannot send email: your account is Tier 0 (anonymous).',
+    'Sending requires a verified account (Tier 1+).',
+    '',
+    'To unlock sending:',
+    '1. Call verify_account with your X (Twitter) handle',
+    '2. Once verified, retry send_email',
+    '',
+    'Use get_account to check your current tier.',
+  ],
+  add_domain: [
+    'Cannot add custom domain: requires Tier 2 (Builder) or higher.',
+    '',
+    'To proceed:',
+    '1. Verify your account with verify_account if not already verified',
+    '2. Upgrade to Builder tier at https://lobstermail.ai/pricing',
+    '',
+    'Use get_account to check your current tier.',
+  ],
+};
+
+function handleMailError(err: unknown, operation: string): ToolResult | null {
+  if (err instanceof InsufficientTierError) {
+    const lines = TIER_GUIDANCE[operation] ?? [
+      `This operation requires a higher account tier.`,
+      `Error: ${err.message}`,
+      '',
+      'Use get_account to check your current tier, and verify_account to verify via X.',
+    ];
+    return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+  }
+
+  if (err instanceof RateLimitError) {
+    return {
+      content: [{
+        type: 'text' as const,
+        text: [
+          `Rate limit exceeded for ${operation}.`,
+          err.message,
+          '',
+          'Wait a moment and try again. Use get_account to check your limits.',
+        ].join('\n'),
+      }],
+    };
+  }
+
+  return null;
+}
 
 const server = new McpServer(
   { name: '@lobsterkit/lobstermail-mcp', version: '1.5.0' },
@@ -202,23 +257,29 @@ server.registerTool('send_email', {
     in_reply_to: z.string().optional().describe('Message-ID of the email being replied to (enables threading)'),
   },
 }, async ({ inbox_id, to, subject, body_text, body_html, cc, in_reply_to }) => {
-  const inbox = await getInbox(inbox_id);
-  const result = await inbox.send({
-    to,
-    cc,
-    subject,
-    body: { text: body_text, html: body_html },
-    inReplyTo: in_reply_to,
-  });
+  try {
+    const inbox = await getInbox(inbox_id);
+    const result = await inbox.send({
+      to,
+      cc,
+      subject,
+      body: { text: body_text, html: body_html },
+      inReplyTo: in_reply_to,
+    });
 
-  return {
-    content: [
-      {
-        type: 'text' as const,
-        text: `Email queued for delivery.\n\nEmail ID: ${result.id}\nStatus: ${result.status}`,
-      },
-    ],
-  };
+    return {
+      content: [
+        {
+          type: 'text' as const,
+          text: `Email queued for delivery.\n\nEmail ID: ${result.id}\nStatus: ${result.status}`,
+        },
+      ],
+    };
+  } catch (err) {
+    const guidance = handleMailError(err, 'send_email');
+    if (guidance) return guidance;
+    throw err;
+  }
 });
 
 // ── search_emails ────────────────────────────────────────────────────────────
@@ -544,6 +605,36 @@ server.registerTool('get_account', {
       },
     ],
   };
+});
+
+// ── verify_account ────────────────────────────────────────────────────────────
+
+server.registerTool('verify_account', {
+  title: 'Verify Account',
+  description:
+    'Verify this account via X (Twitter) to unlock email sending (Tier 1). ' +
+    'Required before you can use send_email. Provide your X handle.',
+  inputSchema: {
+    provider: z.enum(['x']).default('x').describe('Verification provider (currently only "x")'),
+    handle: z.string().describe('Your X/Twitter handle (without the @)'),
+  },
+}, async ({ provider, handle }) => {
+  const lm = await getClient();
+  const result = await lm.verify({ provider, handle: handle.replace(/^@/, '') });
+
+  const lines = [`Verification status: ${result.status}`];
+
+  if (result.instructions) {
+    lines.push('', result.instructions);
+  }
+
+  if (result.status === 'verified' || result.status === 'already_verified') {
+    lines.push('', 'Your account is now verified. You can send emails using send_email.');
+  } else if (result.status === 'pending') {
+    lines.push('', 'Verification is pending. Use get_account to check your current status.');
+  }
+
+  return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
 });
 
 // ── Start server ──────────────────────────────────────────────────────────────
