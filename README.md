@@ -44,6 +44,10 @@ On first use, an account is created automatically and your token is saved to `~/
 - **SDK**: [@lobsterkit/lobstermail](https://www.npmjs.com/package/@lobsterkit/lobstermail)
 - **API docs**: [api.lobstermail.ai/v1/docs/openapi](https://api.lobstermail.ai/v1/docs/openapi)
 
+## LobsterKit Ecosystem
+
+This MCP server is part of the LobsterKit multi-product ecosystem. Accounts can be linked across LobsterVault, LobsterDB, and LobsterMail using a `linkToken` at signup, enabling a single Stripe customer and an automatic 15% multi-product discount.
+
 ## License
 
 MIT
