@@ -1,80 +1,15 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { InsufficientTierError, RateLimitError } from '@lobsterkit/lobstermail';
 import { getClient, getInbox, cacheInbox } from './state.js';
-
-// ── Proactive error guidance ─────────────────────────────────────────────────
-
-type ToolResult = { content: { type: 'text'; text: string }[] };
-
-const TIER_GUIDANCE: Record<string, string[]> = {
-  send_email: [
-    'ACTION REQUIRED: Cannot send email — your account is Tier 0 (anonymous).',
-    'Sending requires a verified account (Tier 1+).',
-    '',
-    'Do NOT give up. Take these steps now:',
-    '1. Ask the user for their X (Twitter) handle',
-    '2. Call verify_account with that handle to upgrade to Tier 1',
-    '3. Once verified, retry this send_email call — it will work',
-    '',
-    'This is a one-time setup. Once verified, all future sends work automatically.',
-  ],
-  add_domain: [
-    'Cannot add custom domain: requires Tier 2 (Builder) or higher.',
-    '',
-    'To proceed:',
-    '1. Verify your account with verify_account if not already verified',
-    '2. Upgrade to Builder tier at https://lobstermail.ai/pricing',
-    '',
-    'Use get_account to check your current tier.',
-  ],
-};
-
-function handleMailError(err: unknown, operation: string): ToolResult | null {
-  if (err instanceof InsufficientTierError) {
-    const lines = TIER_GUIDANCE[operation] ?? [
-      `This operation requires a higher account tier.`,
-      `Error: ${err.message}`,
-      '',
-      'Use get_account to check your current tier, and verify_account to verify via X.',
-    ];
-    return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
-  }
-
-  if (err instanceof RateLimitError) {
-    return {
-      content: [{
-        type: 'text' as const,
-        text: [
-          `Rate limit exceeded for ${operation}.`,
-          err.message,
-          '',
-          'Wait a moment and try again. Use get_account to check your limits.',
-        ].join('\n'),
-      }],
-    };
-  }
-
-  return null;
-}
 
 const server = new McpServer(
   { name: '@lobsterkit/lobstermail-mcp', version: '1.5.0' },
   {
     capabilities: { tools: {} },
     instructions:
-      'LobsterMail gives you email. Create inboxes, receive emails, send emails, wait for verification codes — no human needed.\n\n' +
-      '## Quick start\n' +
-      '1. create_inbox — get an @lobstermail.ai address\n' +
-      '2. wait_for_email or check_inbox — read incoming messages\n' +
-      '3. send_email — send outbound email (requires verified account)\n\n' +
-      '## Sending email\n' +
-      'New accounts start at Tier 0 (receive-only). To unlock sending:\n' +
-      '1. Ask the user for their X (Twitter) handle\n' +
-      '2. Call verify_account with that handle\n' +
-      '3. Once verified (Tier 1), send_email works immediately\n\n' +
-      'If send_email fails with a tier error, do NOT give up — follow the steps above to verify, then retry.',
+      'LobsterMail gives you email. Create inboxes, receive emails, wait for verification codes — no human needed. ' +
+      'Start with create_inbox to get an @lobstermail.ai address, then use wait_for_email or check_inbox to read messages.',
   },
 );
 
@@ -136,14 +71,14 @@ server.registerTool('check_inbox', {
   },
 }, async ({ inbox_id, limit, since }) => {
   const inbox = await getInbox(inbox_id);
-  const { data: emails } = await inbox.receive({ limit, since });
+  const emails = await inbox.receive({ limit, since });
 
   if (emails.length === 0) {
     return { content: [{ type: 'text' as const, text: 'No emails found in this inbox.' }] };
   }
 
   const lines = emails.map(
-    (e: any) =>
+    (e) =>
       `- [${e.id}] From: ${e.from} | Subject: ${e.subject} | ${e.createdAt}` +
       (e.isInjectionRisk ? ' ⚠️ INJECTION RISK' : ''),
   );
@@ -256,7 +191,6 @@ server.registerTool('send_email', {
   title: 'Send Email',
   description:
     'Send an email from an inbox. Requires a verified account (Tier 1+). ' +
-    'If this fails with a tier error, call verify_account to unlock sending — do not give up. ' +
     'To reply within a thread, provide in_reply_to with the Message-ID of the email being replied to.',
   inputSchema: {
     inbox_id: z.string().describe('Inbox ID to send from'),
@@ -268,29 +202,23 @@ server.registerTool('send_email', {
     in_reply_to: z.string().optional().describe('Message-ID of the email being replied to (enables threading)'),
   },
 }, async ({ inbox_id, to, subject, body_text, body_html, cc, in_reply_to }) => {
-  try {
-    const inbox = await getInbox(inbox_id);
-    const result = await inbox.send({
-      to,
-      cc,
-      subject,
-      body: { text: body_text, html: body_html },
-      inReplyTo: in_reply_to,
-    });
+  const inbox = await getInbox(inbox_id);
+  const result = await inbox.send({
+    to,
+    cc,
+    subject,
+    body: { text: body_text, html: body_html },
+    inReplyTo: in_reply_to,
+  });
 
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: `Email queued for delivery.\n\nEmail ID: ${result.id}\nStatus: ${result.status}`,
-        },
-      ],
-    };
-  } catch (err) {
-    const guidance = handleMailError(err, 'send_email');
-    if (guidance) return guidance;
-    throw err;
-  }
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: `Email queued for delivery.\n\nEmail ID: ${result.id}\nStatus: ${result.status}`,
+      },
+    ],
+  };
 });
 
 // ── search_emails ────────────────────────────────────────────────────────────
@@ -309,7 +237,7 @@ server.registerTool('search_emails', {
     since: z.string().optional().describe('Only emails after this ISO 8601 date'),
     until: z.string().optional().describe('Only emails before this ISO 8601 date'),
     has_attachments: z.boolean().optional().describe('Filter by attachment presence'),
-    limit: z.number().int().min(1).max(50).optional().describe('Max results (1-50, default 20)'),
+    limit: z.number().optional().describe('Max results (1-50, default 20)'),
   },
 }, async ({ query, inbox_id, from, direction, since, until, has_attachments, limit }) => {
   const lm = await getClient();
@@ -337,7 +265,7 @@ server.registerTool('search_emails', {
   );
 
   const footer = results.hasMore
-    ? `\n\nMore results available. Use get_email with an email_id and inbox_id to read the full body.`
+    ? `\n\nMore results available. Use get_email to read full emails.`
     : `\n\nUse get_email with an email_id and inbox_id to read the full body.`;
 
   return {
@@ -360,7 +288,7 @@ server.registerTool('list_threads', {
     'Returns newest threads first.',
   inputSchema: {
     inbox_id: z.string().describe('Inbox ID (e.g. ibx_...)'),
-    limit: z.number().int().min(1).max(50).optional().describe('Max threads to return (default: 20, max: 50)'),
+    limit: z.number().optional().describe('Max threads to return (default: 20, max: 50)'),
     cursor: z.string().optional().describe('Pagination cursor from previous response'),
   },
 }, async ({ inbox_id, limit, cursor }) => {
@@ -372,7 +300,7 @@ server.registerTool('list_threads', {
   }
 
   const lines = result.data.map(
-    (t: any) => `- [${t.id}] ${t.subject} (${t.emailCount} emails, last: ${t.lastEmailAt})`,
+    (t) => `- [${t.id}] ${t.subject} (${t.emailCount} emails, last: ${t.lastEmailAt})`,
   );
 
   const footer = result.hasMore
@@ -405,9 +333,10 @@ server.registerTool('get_thread', {
   const thread = await inbox.getThread(thread_id);
 
   const emailLines = thread.emails.map(
-    (e: any, i: number) =>
+    (e, i) =>
       `${i + 1}. [${e.id}] From: ${e.from} | Subject: ${e.subject} | ${e.createdAt}` +
-      (e.preview ? `\n   Preview: ${e.preview.slice(0, 100)}...` : ''),
+      (e.preview ? `\n   Preview: ${e.preview.slice(0, 100)}...` : '') +
+      (e.isInjectionRisk ? '\n   ⚠️ INJECTION RISK' : ''),
   );
 
   return {
@@ -428,114 +357,6 @@ server.registerTool('get_thread', {
       },
     ],
   };
-});
-
-// ── extract_email_data ────────────────────────────────────────────────────────
-
-server.registerTool('extract_email_data', {
-  title: 'Extract Email Data',
-  description:
-    'Extract structured data from an email using AI. ' +
-    'Returns contacts, dates, amounts, scheduling data, and action items. ' +
-    'Triggers extraction and waits for completion (up to 60s).',
-  inputSchema: {
-    inbox_id: z.string().describe('Inbox ID (e.g. ibx_...)'),
-    email_id: z.string().describe('Email ID (e.g. eml_...)'),
-    timeout: z
-      .number()
-      .int()
-      .min(1000)
-      .max(120_000)
-      .optional()
-      .describe('Max wait time in milliseconds (1000-120000, default: 60000)'),
-  },
-}, async ({ inbox_id, email_id, timeout }) => {
-  const inbox = await getInbox(inbox_id);
-  const email = await inbox.getEmail(email_id);
-  const effectiveTimeout = Math.min(timeout ?? 60_000, 120_000);
-  const result = await email.waitForExtraction({ timeout: effectiveTimeout });
-
-  if (!result) {
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: 'Extraction timed out. The extraction may still be processing — try extract_email_data again later.',
-        },
-      ],
-    };
-  }
-
-  if (result.status === 'failed') {
-    return {
-      content: [
-        {
-          type: 'text' as const,
-          text: `Extraction failed: ${result.errorMessage ?? 'Unknown error'}`,
-        },
-      ],
-    };
-  }
-
-  const sections: string[] = [
-    `Extraction ID: ${result.id}`,
-    `Status: ${result.status}`,
-    `Model: ${result.modelUsed}`,
-    `Processing time: ${result.processingMs}ms`,
-    '',
-  ];
-
-  if (result.contacts.length > 0) {
-    sections.push('Contacts:');
-    for (const c of result.contacts) {
-      const parts = [c.name, c.email, c.phone, c.role, c.organization].filter(Boolean);
-      sections.push(`- ${parts.join(' | ')}`);
-    }
-    sections.push('');
-  }
-
-  if (result.dates.length > 0) {
-    sections.push('Dates:');
-    for (const d of result.dates) {
-      sections.push(`- ${d.label}: ${d.value}${d.isEstimate ? ' (estimate)' : ''}`);
-    }
-    sections.push('');
-  }
-
-  if (result.amounts.length > 0) {
-    sections.push('Amounts:');
-    for (const a of result.amounts) {
-      sections.push(`- ${a.label}: ${a.value} ${a.currency}`);
-    }
-    sections.push('');
-  }
-
-  if (result.scheduling.length > 0) {
-    sections.push('Scheduling:');
-    for (const s of result.scheduling) {
-      const time = [s.startTime, s.endTime].filter(Boolean).join(' → ');
-      sections.push(`- ${s.eventType}: ${s.summary}${time ? ` (${time})` : ''}${s.location ? ` @ ${s.location}` : ''}`);
-    }
-    sections.push('');
-  }
-
-  if (result.actions.length > 0) {
-    sections.push('Actions:');
-    for (const a of result.actions) {
-      sections.push(`- [${a.type}] ${a.description}${a.url ? ` — ${a.url}` : ''}${a.deadline ? ` (by ${a.deadline})` : ''}`);
-    }
-    sections.push('');
-  }
-
-  if (result.metadata && Object.keys(result.metadata).length > 0) {
-    sections.push('Metadata:');
-    for (const [key, value] of Object.entries(result.metadata)) {
-      sections.push(`- ${key}: ${JSON.stringify(value)}`);
-    }
-    sections.push('');
-  }
-
-  return { content: [{ type: 'text' as const, text: sections.join('\n') }] };
 });
 
 // ── list_inboxes ──────────────────────────────────────────────────────────────
@@ -599,59 +420,23 @@ server.registerTool('get_account', {
   const lm = await getClient();
   const acct = await lm.getAccount();
 
-  const lines = [
-    `Account: ${acct.id}`,
-    `Tier: ${acct.tier} (${acct.tierName})`,
-    `Can send: ${acct.limits.canSend}`,
-    `Max inboxes: ${acct.limits.maxInboxes ?? 'unlimited'}`,
-    `Daily email limit: ${acct.limits.dailyEmailLimit}`,
-    `Inboxes used: ${acct.usage.inboxCount}`,
-    `Total emails received: ${acct.usage.totalEmailsReceived}`,
-    `Created: ${acct.createdAt}`,
-  ];
-
-  if (!acct.limits.canSend) {
-    lines.push(
-      '',
-      '⚠️ Sending is disabled. To unlock:',
-      '1. Ask the user for their X (Twitter) handle',
-      '2. Call verify_account with that handle',
-      '3. Once verified, send_email will work immediately',
-    );
-  }
-
-  return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
-});
-
-// ── verify_account ────────────────────────────────────────────────────────────
-
-server.registerTool('verify_account', {
-  title: 'Verify Account',
-  description:
-    'Verify this account via X (Twitter) to unlock email sending (Tier 1). ' +
-    'Required before you can use send_email. Ask the user for their X handle, then call this tool. ' +
-    'This is a one-time step — once verified, sending works permanently.',
-  inputSchema: {
-    provider: z.enum(['x']).default('x').describe('Verification provider (currently only "x")'),
-    handle: z.string().describe('Your X/Twitter handle (without the @)'),
-  },
-}, async ({ provider, handle }) => {
-  const lm = await getClient();
-  const result = await lm.verify({ provider, handle: handle.replace(/^@/, '') });
-
-  const lines = [`Verification status: ${result.status}`];
-
-  if (result.instructions) {
-    lines.push('', result.instructions);
-  }
-
-  if (result.status === 'verified' || result.status === 'already_verified') {
-    lines.push('', 'Your account is now verified. You can send emails using send_email.');
-  } else if (result.status === 'pending') {
-    lines.push('', 'Verification is pending. Use get_account to check your current status.');
-  }
-
-  return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text: [
+          `Account: ${acct.id}`,
+          `Tier: ${acct.tier} (${acct.tierName})`,
+          `Can send: ${acct.limits.canSend}`,
+          `Max inboxes: ${acct.limits.maxInboxes ?? 'unlimited'}`,
+          `Daily email limit: ${acct.limits.dailyEmailLimit}`,
+          `Inboxes used: ${acct.usage.inboxCount}`,
+          `Total emails received: ${acct.usage.totalEmailsReceived}`,
+          `Created: ${acct.createdAt}`,
+        ].join('\n'),
+      },
+    ],
+  };
 });
 
 // ── Start server ──────────────────────────────────────────────────────────────
