@@ -240,10 +240,10 @@ await inbox.send({
 });
 ```
 
-At least one of `body.text` or `body.html` must be provided. When only `body.html` is sent, a plain text fallback is auto-generated.
+Both `body.text` and `body.html` are optional, but at least one must be provided. When only `body.html` is sent, a plain text fallback is auto-generated.
 
 Sending requires Free Verified tier or above. Two ways to verify:
-1. **X verification:** `POST /v1/verify/x` with your tweet URL (free, instant). Requires `X_API_KEY` environment variable in production.
+1. **X verification:** `POST /v1/verify/x` with your tweet URL (free, instant). This relies on an `X_API_KEY` configured on the LobsterMail API backend — MCP users and SDK consumers do not need to set this. If X verification is unavailable, use card verification instead.
 2. **Card verification:** `POST /v1/billing/checkout` with `{"tier": 1}` — $0/mo, card on file. You will **not** be charged unless you upgrade.
 
 ---
@@ -285,7 +285,7 @@ Sending requires Free Verified tier or above. Two ways to verify:
 | Tool | Description |
 |------|-------------|
 | `create_inbox` | Create a new `@lobstermail.ai` inbox with smart naming |
-| `check_inbox` | List recent emails — sender, subject, preview |
+| `check_inbox` | List recent emails — sender, subject, preview. Supports optional `from` filter. |
 | `wait_for_email` | Wait for an incoming email (real-time long-poll) |
 | `get_email` | Get full email body in LLM-safe format |
 | `send_email` | Send email (Tier 1+ only) |
