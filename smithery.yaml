@@ -1,0 +1,22 @@
+runtime: typescript
+target: local
+module: ./dist/index.js
+
+startCommand:
+  type: stdio
+  configSchema:
+    type: object
+    properties:
+      LOBSTERMAIL_API_KEY:
+        type: string
+        description: "LobsterMail API key (lm_sk_test_... or lm_sk_live_...). Get one free at https://lobstermail.ai"
+    required:
+      - LOBSTERMAIL_API_KEY
+  commandFunction: |
+    (config) => ({
+      command: 'npx',
+      args: ['-y', '@lobsterkit/lobstermail-mcp@latest'],
+      env: {
+        LOBSTERMAIL_API_KEY: config.LOBSTERMAIL_API_KEY
+      }
+    })
