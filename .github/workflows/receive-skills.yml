@@ -1,0 +1,39 @@
+name: Receive Skills
+
+on:
+  repository_dispatch:
+    types: [skill-update]
+
+jobs:
+  update:
+    name: Update skill files
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write skill files
+        run: |
+          mkdir -p skills/claude skills/clawhub skills/global
+          cat <<'SKILL_EOF' > skills/claude/SKILL.md
+          ${{ github.event.client_payload.skills.claude }}
+          SKILL_EOF
+          cat <<'SKILL_EOF' > skills/clawhub/SKILL.md
+          ${{ github.event.client_payload.skills.clawhub }}
+          SKILL_EOF
+          cat <<'SKILL_EOF' > skills/global/SKILL.md
+          ${{ github.event.client_payload.skills.global }}
+          SKILL_EOF
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "lobsterkit-bot"
+          git config user.email "bot@lobsterkit.dev"
+          git add skills/
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "[auto] sync skills from ${{ github.event.client_payload.source }} (${{ github.event.client_payload.sha }})"
+            git push
+          fi
