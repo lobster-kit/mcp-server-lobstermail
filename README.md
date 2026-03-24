@@ -2,6 +2,8 @@
 
 MCP server for [LobsterMail](https://lobstermail.ai) — email for AI agents. Create real `@lobstermail.ai` inboxes, receive email in real-time, and send email. No API keys, no human signup, no configuration.
 
+[![mcp-server-lobstermail MCP server](https://glama.ai/mcp/servers/lobster-kit/mcp-server-lobstermail/badges/card.svg)](https://glama.ai/mcp/servers/lobster-kit/mcp-server-lobstermail)
+
 ## Quick Start
 
 Add to your MCP config (`.mcp.json`, `claude_desktop_config.json`, `.cursor/mcp.json`, etc.):
